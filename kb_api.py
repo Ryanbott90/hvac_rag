@@ -28,6 +28,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 API_TOKEN = os.getenv("API_TOKEN")
 
+# ---- boost controls (configurable via env) ----
+DOMAIN_BOOST = float(os.getenv("DOMAIN_BOOST", "0.15"))
+BRAND_BOOST = float(os.getenv("BRAND_BOOST", "0.10"))
+
 # ---- synonym mapping ----
 SYNONYMS = {
     "a/c": "ac", "a c": "ac", "a\\c": "ac",
@@ -132,10 +136,17 @@ else:
                     "confirm": "Are you in a safe location?"
                 })
             
-            # Domain detection
-            cooling_terms = ["ac", "air condition", "cooling", "heat pump", "mini-split", "compressor"]
+            # Domain detection - heating takes precedence
+            heating_terms = ["furnace", "igniter", "flame sensor", "gas valve", "pilot light", "inducer"]
+            cooling_terms = ["ac", "a/c", "air condition", "cooling", "condenser", 
+                           "heat pump", "heat-pump", "mini split", "minisplit", 
+                           "outdoor unit", "refrigerant"]
+            
+            is_heating = any(term in q_norm for term in heating_terms)
             is_cooling = any(term in q_norm for term in cooling_terms)
-            domain = "COOLING" if is_cooling else "HVAC"
+            
+            # Heating takes precedence if both detected
+            domain = "HVAC" if is_heating else ("COOLING" if is_cooling else "HVAC")
             
             jlog(evt="domain_detected", rid=rid, domain=domain, normalized_query=q_norm)
             
@@ -161,12 +172,12 @@ else:
                 
                 # Domain boost
                 if meta.get("domain") == domain:
-                    boost_domain = score_raw * 0.15
+                    boost_domain = score_raw * DOMAIN_BOOST
                 
                 # Brand boost
                 brand = meta.get("brand", "").lower()
                 if brand and brand != "generic" and brand in q_norm:
-                    boost_brand = score_raw * 0.10
+                    boost_brand = score_raw * BRAND_BOOST
                 
                 score_boosted = score_raw + boost_domain + boost_brand
                 
